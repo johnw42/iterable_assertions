@@ -45,6 +45,53 @@ impl<T: Eq + Hash + Clone> SetDifference<T> {
     }
 }
 
+#[derive(Debug)]
+pub struct MapDifference<K, V> {
+    /// Elements only in the left map.
+    pub left: Vec<(K, V)>,
+    /// Elements only in the right map.
+    pub right: Vec<(K, V)>,
+    /// Elements with the same key but different values in the two maps.
+    pub different: Vec<(K, V, V)>,
+    /// Elements in both maps with the same value.
+    pub same: Vec<(K, V)>,
+}
+
+impl<K: Eq + Hash + Clone, V: Eq + Clone> MapDifference<K, V> {
+    /// Creates a new `MapDifference` from left and right collections of items.
+    ///
+    /// The items are treated as as key-value pairs, meaning the key is used to
+    /// determine uniqueness and differences between the left and right
+    /// collections.
+    pub fn new(
+        left: impl IntoIterator<Item = (K, V)>,
+        right: impl IntoIterator<Item = (K, V)>,
+    ) -> Self {
+        let mut left: LinkedHashMap<K, V> = left.into_iter().collect();
+        let mut right: LinkedHashMap<K, V> = right.into_iter().collect();
+        let mut different = Vec::new();
+        let mut same = Vec::new();
+
+        for (k, lv) in left.clone() {
+            if let Some(rv) = right.remove(&k) {
+                left.remove(&k);
+                if lv == rv {
+                    same.push((k, lv));
+                } else {
+                    different.push((k, lv, rv));
+                }
+            }
+        }
+
+        Self {
+            left: left.into_iter().collect(),
+            right: right.into_iter().collect(),
+            different,
+            same,
+        }
+    }
+}
+
 /// A structure representing the uniqueness of items in a collection. It
 /// contains duplicates along with their counts, and a separate vec of unique
 /// items.
@@ -152,6 +199,33 @@ right only: {:?},
             $crate::maybe_format!($($format_arg),*),
             diff.left,
             diff.right,
+            diff.both
+        );
+
+    }};
+}
+
+/// Asserts that two iterable expressions yield the same set of elements,
+/// ignoring order and duplicates.
+///
+/// On failure, this macro will panic with a message showing the elements
+/// that are only in the left collection, only in the right collection, and
+/// those present in both.
+#[macro_export]
+macro_rules! assert_eq_maps {
+    ($left:expr, $right:expr $(, $format_arg:expr)* $(,)?) => {{
+        let diff = $crate::MapDifference::new($left, $right);
+        assert!(
+            diff.left.is_empty() && diff.right.is_empty() && diff.different.is_empty(),
+            r#"Maps are not equal{}
+       left only: {:?},
+      right only: {:?},
+different values: {:?},
+     same values: {:?}"#,
+            $crate::maybe_format!($($format_arg),*),
+            diff.left,
+            diff.right,
+            diff.different,
             diff.both
         );
 
