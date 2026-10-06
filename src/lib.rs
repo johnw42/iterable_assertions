@@ -3,7 +3,7 @@
 
 use std::hash::Hash;
 
-use linked_hash_map::{Entry, LinkedHashMap};
+use linked_hash_map::LinkedHashMap;
 use linked_hash_set::LinkedHashSet;
 use similar::{Algorithm, DiffOp, capture_diff_slices};
 

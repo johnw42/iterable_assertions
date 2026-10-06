@@ -1,4 +1,4 @@
-use set_assertions::{assert_eq_maps, assert_eq_seqs, assert_eq_sets, assert_unique};
+use iterable_assertions::{assert_eq_maps, assert_eq_seqs, assert_eq_sets, assert_unique};
 
 #[test]
 fn test_assert_eq_sets() {
