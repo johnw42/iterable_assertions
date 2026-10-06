@@ -82,6 +82,22 @@ fn test_assert_eq_maps_fails_with_message() {
 }
 
 #[test]
+#[should_panic(expected = r#"Duplicate key found in left map: "a""#)]
+fn test_assert_eq_map_fails_on_duplicates_left() {
+    let a = [("a", 1), ("a", 1)];
+    let b = [];
+    assert_eq_maps!(a, b);
+}
+
+#[test]
+#[should_panic(expected = r#"Duplicate key found in right map: "a""#)]
+fn test_assert_eq_map_fails_on_duplicates_right() {
+    let a = [];
+    let b = [("a", 1), ("a", 1)];
+    assert_eq_maps!(a, b);
+}
+
+#[test]
 fn test_assert_unique() {
     let items = vec![1, 2, 3];
     assert_unique!(items);

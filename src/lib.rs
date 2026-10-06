@@ -3,7 +3,7 @@
 
 use std::hash::Hash;
 
-use linked_hash_map::LinkedHashMap;
+use linked_hash_map::{Entry, LinkedHashMap};
 use linked_hash_set::LinkedHashSet;
 use similar::{Algorithm, DiffOp, capture_diff_slices};
 
@@ -56,6 +56,12 @@ impl<T: Eq + Hash + Clone> SetDifference<T> {
 }
 
 #[derive(Debug)]
+pub enum DuplicateKey<K> {
+    Left(K),
+    Right(K),
+}
+
+#[derive(Debug)]
 pub struct MapDifference<K, V> {
     /// Elements only in the left map.
     pub left: Vec<(K, V)>,
@@ -78,15 +84,32 @@ where
     /// determine uniqueness and differences between the left and right
     /// collections.
     ///
-    /// Returns `None` if the maps are equal.
+    /// Returns `Some(None)` if the maps are equal.  Returns `Err` if there are
+    /// duplicate keys in either map.
     pub fn new(
         left: impl IntoIterator<Item = (K, V)>,
         right: impl IntoIterator<Item = (K, V)>,
-    ) -> Option<Self> {
-        let mut left: LinkedHashMap<K, V> = left.into_iter().collect();
-        let mut right: LinkedHashMap<K, V> = right.into_iter().collect();
+    ) -> Result<Option<Self>, DuplicateKey<K>> {
+        fn build_map<K, V>(
+            items: impl IntoIterator<Item = (K, V)>,
+        ) -> Result<LinkedHashMap<K, V>, K>
+        where
+            K: Eq + Hash,
+        {
+            let mut map = LinkedHashMap::new();
+            for (k, v) in items.into_iter() {
+                if map.contains_key(&k) {
+                    return Err(k);
+                }
+                map.insert(k, v);
+            }
+            Ok(map)
+        }
+
+        let mut left: LinkedHashMap<K, V> = build_map(left).map_err(DuplicateKey::Left)?;
+        let mut right: LinkedHashMap<K, V> = build_map(right).map_err(DuplicateKey::Right)?;
         if left.len() == right.len() && left.iter().all(|(k, v)| right.get(k) == Some(v)) {
-            return None;
+            return Ok(None);
         }
 
         let mut different = Vec::new();
@@ -102,12 +125,12 @@ where
             }
         }
 
-        Some(Self {
+        Ok(Some(Self {
             left: left.into_iter().collect(),
             right: right.into_iter().collect(),
             different,
             same,
-        })
+        }))
     }
 }
 
@@ -243,28 +266,40 @@ right only: {:?},
     }};
 }
 
-/// Asserts that two iterable expressions yield the same set of elements,
-/// ignoring order and duplicates.
+/// Asserts that two iterable expressions yield the same set of key-value pairs.
 ///
-/// On failure, this macro will panic with a message showing the elements
-/// that are only in the left collection, only in the right collection, and
-/// those present in both.
+/// On failure, this macro will panic with a message showing the elements that
+/// are only in the left collection, only in the right collection, and those
+/// present in both with different values, and those present in both with the
+/// same values.
+///
+/// If a duplicate key is found in either map, the macro will panic with a
+/// message indicating the offending key.
 #[macro_export]
 macro_rules! assert_eq_maps {
     ($left:expr, $right:expr $(, $format_arg:expr)* $(,)?) => {{
-        if let Some(diff) = $crate::MapDifference::new($left, $right) {
-            panic!(
-                r#"Maps are not equal{}
+        match $crate::MapDifference::new($left, $right) {
+            Ok(Some(diff)) => {
+                panic!(
+                    r#"Maps are not equal{}
        left only: {:?},
       right only: {:?},
 different values: {:?},
      same values: {:?}"#,
-                $crate::maybe_format!($($format_arg),*),
-                diff.left,
-                diff.right,
-                diff.different,
-                diff.same
-            );
+                    $crate::maybe_format!($($format_arg),*),
+                    diff.left,
+                    diff.right,
+                    diff.different,
+                    diff.same
+                );
+            }
+            Ok(None) => {}
+            Err($crate::DuplicateKey::Left(e)) => {
+                panic!("Duplicate key found in left map: {:?}", e);
+            }
+            Err($crate::DuplicateKey::Right(e)) => {
+                panic!("Duplicate key found in right map: {:?}", e);
+            }
         }
 
     }};
