@@ -29,19 +29,29 @@ impl<T: Eq + Hash + Clone> SetDifference<T> {
     /// unique elements are considered.  Ordering of the initial inputs is
     /// preserved in the resulting vectors, but the ordering does not otherwise
     /// affect the output.
-    pub fn new(left: impl IntoIterator<Item = T>, right: impl IntoIterator<Item = T>) -> Self {
+    ///
+    /// Returns `None` if the sets are equal.
+    pub fn new(
+        left: impl IntoIterator<Item = T>,
+        right: impl IntoIterator<Item = T>,
+    ) -> Option<Self> {
         let mut left: LinkedHashSet<T> = left.into_iter().collect();
         let mut right: LinkedHashSet<T> = right.into_iter().collect();
+        if left.len() == right.len() && left.iter().all(|item| right.contains(item)) {
+            return None;
+        }
+
         let both: LinkedHashSet<T> = left.intersection(&right).cloned().collect();
         both.iter().for_each(|item| {
             left.remove(item);
             right.remove(item);
         });
-        Self {
+
+        Some(Self {
             left: left.into_iter().collect(),
             right: right.into_iter().collect(),
             both: both.into_iter().collect(),
-        }
+        })
     }
 }
 
@@ -67,15 +77,20 @@ where
     /// The items are treated as as key-value pairs, meaning the key is used to
     /// determine uniqueness and differences between the left and right
     /// collections.
+    ///
+    /// Returns `None` if the maps are equal.
     pub fn new(
         left: impl IntoIterator<Item = (K, V)>,
         right: impl IntoIterator<Item = (K, V)>,
-    ) -> Self {
+    ) -> Option<Self> {
         let mut left: LinkedHashMap<K, V> = left.into_iter().collect();
         let mut right: LinkedHashMap<K, V> = right.into_iter().collect();
+        if left.len() == right.len() && left.iter().all(|(k, v)| right.get(k) == Some(v)) {
+            return None;
+        }
+
         let mut different = Vec::new();
         let mut same = Vec::new();
-
         for (k, lv) in left.clone() {
             if let Some(rv) = right.remove(&k) {
                 left.remove(&k);
@@ -87,12 +102,12 @@ where
             }
         }
 
-        Self {
+        Some(Self {
             left: left.into_iter().collect(),
             right: right.into_iter().collect(),
             different,
             same,
-        }
+        })
     }
 }
 
@@ -102,6 +117,8 @@ where
 ///
 /// Ordering of the initial inputs is preserved in the resulting vectors as much
 /// as possible.
+///
+/// Returns `None` if there are no duplicates.
 #[derive(Debug)]
 pub struct Uniqueness<T> {
     pub duplicates: Vec<(T, usize)>,
@@ -110,7 +127,7 @@ pub struct Uniqueness<T> {
 
 impl<T: Eq + Hash + Clone> Uniqueness<T> {
     /// Creates a new `Uniqueness` from a collection of items.
-    pub fn new(items: impl IntoIterator<Item = T>) -> Self {
+    pub fn new(items: impl IntoIterator<Item = T>) -> Option<Self> {
         let mut unique = LinkedHashSet::new();
         let mut duplicates = LinkedHashMap::new();
         for item in items.into_iter() {
@@ -121,13 +138,19 @@ impl<T: Eq + Hash + Clone> Uniqueness<T> {
         for duplicate in duplicates.keys() {
             unique.remove(duplicate);
         }
-        Self {
+        if duplicates.is_empty() {
+            return None;
+        }
+        Some(Self {
             duplicates: duplicates.into_iter().collect::<Vec<_>>(),
             unique: unique.into_iter().collect(),
-        }
+        })
     }
 }
 
+/// An enum representing the membership of an item in two sequences.  It can be
+/// either in both sequences, only in the left sequence, or only in the right
+/// sequence.
 #[derive(Debug)]
 pub enum SeqMembership<T> {
     Both(Vec<T>),
@@ -135,13 +158,25 @@ pub enum SeqMembership<T> {
     Right(Vec<T>),
 }
 
+/// A structure representing the difference between two sequences.
+/// It contains a vector of `SeqMembership` items, indicating which elements
+/// are in both sequences, only in the left sequence, or only in the right sequence.
 #[derive(Debug)]
 pub struct SeqDifference<T>(pub Vec<SeqMembership<T>>);
 
 impl<T: Eq + Hash + Clone> SeqDifference<T> {
-    pub fn new(left: impl IntoIterator<Item = T>, right: impl IntoIterator<Item = T>) -> Self {
+    /// Creates a new `SeqDifference` from two sequences.
+    ///
+    /// Returns `None` if the sequences are equal.
+    pub fn new(
+        left: impl IntoIterator<Item = T>,
+        right: impl IntoIterator<Item = T>,
+    ) -> Option<Self> {
         let left: Vec<T> = left.into_iter().collect();
         let right: Vec<T> = right.into_iter().collect();
+        if left == right {
+            return None;
+        }
         let ops = capture_diff_slices(Algorithm::Patience, &left, &right);
         let mut result = SeqDifference(Vec::new());
         for op in dbg!(ops) {
@@ -180,7 +215,7 @@ impl<T: Eq + Hash + Clone> SeqDifference<T> {
                 }
             }
         }
-        result
+        Some(result)
     }
 }
 
@@ -193,19 +228,18 @@ impl<T: Eq + Hash + Clone> SeqDifference<T> {
 #[macro_export]
 macro_rules! assert_eq_sets {
     ($left:expr, $right:expr $(, $format_arg:expr)* $(,)?) => {{
-        let diff = $crate::SetDifference::new($left, $right);
-        assert!(
-            diff.left.is_empty() && diff.right.is_empty(),
-            r#"Sets are not equal{}
+        if let Some(diff) = $crate::SetDifference::new($left, $right) {
+            panic!(
+                r#"Sets are not equal{}
  left only: {:?},
 right only: {:?},
    in both: {:?}"#,
-            $crate::maybe_format!($($format_arg),*),
-            diff.left,
-            diff.right,
-            diff.both
-        );
-
+                $crate::maybe_format!($($format_arg),*),
+                diff.left,
+                diff.right,
+                diff.both
+            );
+        }
     }};
 }
 
@@ -218,20 +252,20 @@ right only: {:?},
 #[macro_export]
 macro_rules! assert_eq_maps {
     ($left:expr, $right:expr $(, $format_arg:expr)* $(,)?) => {{
-        let diff = $crate::MapDifference::new($left, $right);
-        assert!(
-            diff.left.is_empty() && diff.right.is_empty() && diff.different.is_empty(),
-            r#"Maps are not equal{}
+        if let Some(diff) = $crate::MapDifference::new($left, $right) {
+            panic!(
+                r#"Maps are not equal{}
        left only: {:?},
       right only: {:?},
 different values: {:?},
      same values: {:?}"#,
-            $crate::maybe_format!($($format_arg),*),
-            diff.left,
-            diff.right,
-            diff.different,
-            diff.same
-        );
+                $crate::maybe_format!($($format_arg),*),
+                diff.left,
+                diff.right,
+                diff.different,
+                diff.same
+            );
+        }
 
     }};
 }
@@ -243,30 +277,33 @@ different values: {:?},
 #[macro_export]
 macro_rules! assert_unique {
     ($expr:expr $(, $format_arg:expr)* $(,)?) => {{
-        let uniqueness = $crate::Uniqueness::new($expr);
-        assert!(
-            uniqueness.duplicates.is_empty(),
-            r#"Items are not unique{}
+        if let Some(uniqueness) = $crate::Uniqueness::new($expr) {
+            panic!(
+                r#"Items are not unique{}
 duplicates: {:?},
     unique: {:?}"#,
-            $crate::maybe_format!($($format_arg),*),
-            uniqueness.duplicates,
-            uniqueness.unique
-        );
+                $crate::maybe_format!($($format_arg),*),
+                uniqueness.duplicates,
+                uniqueness.unique
+            );
+        }
     }};
 }
 
+/// Asserts that two sequences yield the same elements in the same order.
+///
+/// On failure, this macro will panic with a message showing the differences between the sequences.
 #[macro_export]
 macro_rules! assert_eq_seqs {
     ($left:expr, $right:expr $(, $format_arg:expr)* $(,)?) => {{
-        let diff = $crate::SeqDifference::new($left, $right);
-        assert!(
-            matches!(diff.0.as_slice(), [$crate::SeqMembership::Both(_)]),
-            r#"Sequences are not equal{}
+        if let Some(diff) = $crate::SeqDifference::new($left, $right) {
+            panic!(
+                r#"Sequences are not equal{}
 diff: {:?}"#,
-            $crate::maybe_format!($($format_arg),*),
-            diff.0
-        );
+                $crate::maybe_format!($($format_arg),*),
+                diff.0
+            );
+        }
     }};
 }
 
