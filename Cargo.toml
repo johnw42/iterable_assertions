@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Assertions for iterable collections"
 repository = "https://github.com/johnw42/iterable_assertions"
+license = "MIT"
 
 [dependencies]
 linked-hash-map = "0.5.6"
