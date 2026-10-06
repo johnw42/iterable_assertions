@@ -57,7 +57,11 @@ pub struct MapDifference<K, V> {
     pub same: Vec<(K, V)>,
 }
 
-impl<K: Eq + Hash + Clone, V: Eq + Clone> MapDifference<K, V> {
+impl<K, V> MapDifference<K, V>
+where
+    K: Eq + Hash + Clone,
+    V: Eq + Clone,
+{
     /// Creates a new `MapDifference` from left and right collections of items.
     ///
     /// The items are treated as as key-value pairs, meaning the key is used to
@@ -226,7 +230,7 @@ different values: {:?},
             diff.left,
             diff.right,
             diff.different,
-            diff.both
+            diff.same
         );
 
     }};

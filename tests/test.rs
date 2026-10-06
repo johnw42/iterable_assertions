@@ -1,4 +1,4 @@
-use set_assertions::{assert_eq_seqs, assert_eq_sets, assert_unique};
+use set_assertions::{assert_eq_maps, assert_eq_seqs, assert_eq_sets, assert_unique};
 
 #[test]
 fn test_assert_eq_sets() {
@@ -34,6 +34,51 @@ fn test_assert_eq_sets_fails_with_message() {
     let a = vec![1, 2, 3, 4];
     let b = vec![1, 2, 3, 5];
     assert_eq_sets!(&a, &b, "{:?} != {:?}", a, b);
+}
+
+#[test]
+fn test_assert_eq_maps() {
+    let a = [("a", "A"), ("b", "B")];
+    let b = [("b", "B"), ("a", "A")];
+    assert_eq_maps!(a, b);
+}
+
+#[test]
+fn test_assert_eq_maps_with_refs() {
+    let a = [("a", "A"), ("b", "B")];
+    let b = [("b", "B"), ("a", "A")];
+
+    // Passing references directly doesn't work because we need pairs, not
+    // references to pairs, but if we convert to pairs of references, it works.
+    fn ref_to_pair<K, V>((k, v): &(K, V)) -> (&K, &V) {
+        (k, v)
+    }
+
+    assert_eq_maps!(a.iter().map(ref_to_pair), b.iter().map(ref_to_pair));
+}
+
+#[test]
+#[should_panic(expected = r#"Maps are not equal
+       left only: [("d", 4)],
+      right only: [("e", 5)],
+different values: [("c", 3, 4)],
+     same values: [("a", 1), ("b", 2)]"#)]
+fn test_assert_eq_maps_fails() {
+    let a = [("a", 1), ("b", 2), ("c", 3), ("d", 4)];
+    let b = [("a", 1), ("b", 2), ("c", 4), ("e", 5)];
+    assert_eq_maps!(a, b);
+}
+
+#[test]
+#[should_panic(expected = r#"Maps are not equal: xyzzy
+       left only: [("d", 4)],
+      right only: [("e", 5)],
+different values: [("c", 3, 4)],
+     same values: [("a", 1), ("b", 2)]"#)]
+fn test_assert_eq_maps_fails_with_message() {
+    let a = [("a", 1), ("b", 2), ("c", 3), ("d", 4)];
+    let b = [("a", 1), ("b", 2), ("c", 4), ("e", 5)];
+    assert_eq_maps!(a, b, "xyzzy");
 }
 
 #[test]
